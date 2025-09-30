@@ -35,13 +35,18 @@ struct MessageInputView: View {
     @Binding var isLoadingModels: Bool
     @FocusState private var isTextFieldFocused: Bool
     @State private var cursorPosition: Int = 0
+    @State private var textEditorHeight: CGFloat = 100
+    @State private var isDragging = false
     
     let onSendMessage: () -> Void
     let onCancelGeneration: () -> Void
     
+    private let minHeight: CGFloat = 60
+    private let maxHeight: CGFloat = 300
+    
     private var messageEditor: some View {
         TextEditor(text: $viewModel.messageText)
-            .frame(height: 60)
+            .frame(height: textEditorHeight)
             .padding(8)
             .cornerRadius(8)
             .background(
@@ -97,6 +102,32 @@ struct MessageInputView: View {
         return nil
     }
     
+    private var resizeHandle: some View {
+        Rectangle()
+            .fill(isDragging ? Color.blue.opacity(0.5) : Color.gray.opacity(0.3))
+            .frame(height: 6)
+            .cornerRadius(3)
+            .padding(.horizontal)
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeUpDown.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        isDragging = true
+                        let newHeight = textEditorHeight - value.translation.height
+                        textEditorHeight = max(minHeight, min(maxHeight, newHeight))
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
+    }
+    
     private var actionButtons: some View {
         VStack(spacing: 8) {
             HoverImageButton(
@@ -125,6 +156,8 @@ struct MessageInputView: View {
     
     var body: some View {
         VStack(spacing: 0) {
+            resizeHandle
+            
             if let image = viewModel.selectedImage {
                 ImagePreviewView(image: image) {
                     viewModel.selectedImage = nil
@@ -143,8 +176,8 @@ struct MessageInputView: View {
                 Divider(), alignment: .top
             )
         }
-        .onChange(of: viewModel.shouldFocusTextField) { shouldFocus in
-            if shouldFocus {
+        .onChange(of: viewModel.shouldFocusTextField) { oldValue, newValue in
+            if newValue {
                 isTextFieldFocused = true
                 viewModel.shouldFocusTextField = false
             }
@@ -170,7 +203,6 @@ struct MessageInputView: View {
         }
         
         panel.allowedContentTypes = allowedTypes
-        panel.allowedFileTypes = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp", "pdf", "md", "markdown", "txt"]
         
         panel.begin { response in
             if response == .OK, let url = panel.url {

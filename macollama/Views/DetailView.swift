@@ -27,11 +27,22 @@ struct DetailView: View {
                     }
                     .padding()
                 }
-                .onChange(of: viewModel.messages.count) { _ in
-                    scrollToBottom(proxy: proxy)
+                .onChange(of: viewModel.messages.count) {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        scrollToBottom(proxy: proxy)
+                    }
                 }
-                .onChange(of: viewModel.messages.last?.content) { _ in
-                    scrollToBottom(proxy: proxy)
+                .onChange(of: viewModel.messages.last?.content) {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        scrollToBottom(proxy: proxy)
+                    }
+                }
+                .onReceive(viewModel.$messages) { _ in
+                    if isGenerating {
+                        withAnimation(.easeOut(duration: 0.1)) {
+                            scrollToBottom(proxy: proxy)
+                        }
+                    }
                 }
             }
             
@@ -40,7 +51,7 @@ struct DetailView: View {
                 selectedModel: $selectedModel,
                 isGenerating: $isGenerating,
                 isLoadingModels: $isLoadingModels,
-                onSendMessage: sendMessage,
+                onSendMessage: { Task { await sendMessage() } },
                 onCancelGeneration: {
                     LLMService.shared.cancelGeneration()
                     isGenerating = false
@@ -53,7 +64,7 @@ struct DetailView: View {
         proxy.scrollTo(bottomID, anchor: .bottom)
     }
     
-    private func sendMessage() {
+    private func sendMessage() async {
         guard let selectedModel = selectedModel,
               !viewModel.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
@@ -62,13 +73,14 @@ struct DetailView: View {
         let currentText = viewModel.messageText
         let currentImage = viewModel.selectedImage
         
+        // Clear input and set generating state first
         viewModel.messageText = ""
         viewModel.selectedImage = nil
-        isGenerating = true  
-        
-        responseStartTime = Date() 
-        tokenCount = 0 
-        
+        isGenerating = true
+        responseStartTime = Date()
+        tokenCount = 0
+
+        // Add user message
         let userMessage = ChatMessage(
             id: viewModel.messages.count * 2,
             content: currentText,
@@ -78,7 +90,8 @@ struct DetailView: View {
             engine: selectedModel
         )
         viewModel.messages.append(userMessage)
-        
+
+        // Add waiting message
         let waitingMessage = ChatMessage(
             id: viewModel.messages.count * 2 + 1,
             content: "...",
@@ -89,81 +102,81 @@ struct DetailView: View {
         )
         viewModel.messages.append(waitingMessage)
         
-        Task {
-            do {
-                var fullResponse = ""
-                let stream = try await LLMService.shared.generateResponse(
-                    prompt: currentText,
-                    image: currentImage,
-                    model: selectedModel
-                )
-                
-                for try await response in stream {
-                    fullResponse += response
-                    tokenCount += response.count 
-                    
-                    if let index = viewModel.messages.lastIndex(where: { !$0.isUser }) {
-                        let updatedMessage = ChatMessage(
-                            id: viewModel.messages[index].id,
-                            content: fullResponse,
-                            isUser: false,
-                            timestamp: viewModel.messages[index].timestamp,
-                            image: nil,
-                            engine: selectedModel
-                        )
-                        viewModel.messages[index] = updatedMessage
-                    }
-                }
-                
-                var statsMessage = ""
-                if let startTime = responseStartTime {
-                    let elapsedTime = Date().timeIntervalSince(startTime)
-                    let tokensPerSecond = Double(tokenCount) / elapsedTime
-                    statsMessage = "\n\n---\n [\(selectedModel)] \(String(format: "%.1f", tokensPerSecond)) tokens/sec"
-                    
-                    if let index = viewModel.messages.lastIndex(where: { !$0.isUser }) {
-                        let updatedMessage = ChatMessage(
-                            id: viewModel.messages[index].id,
-                            content: fullResponse + statsMessage,
-                            isUser: false,
-                            timestamp: viewModel.messages[index].timestamp,
-                            image: nil,
-                            engine: selectedModel
-                        )
-                        viewModel.messages[index] = updatedMessage
-                    }
-                }
-                
-                try DatabaseManager.shared.insert(
-                    groupId: viewModel.chatId.uuidString,
-                    instruction: UserDefaults.standard.string(forKey: "llmInstruction") ?? "",
-                    question: currentText,
-                    answer: fullResponse + statsMessage,
-                    image: currentImage,
-                    engine: selectedModel
-                )
-                
-                Task { @MainActor in
-                    await SidebarViewModel.shared.refresh()
-                }
-                
-            } catch {
+        do {
+            var fullResponse = ""
+            let stream = try await LLMService.shared.generateResponse(
+                prompt: currentText,
+                image: currentImage,
+                model: selectedModel
+            )
+            
+            for try await response in stream {
+                fullResponse += response
+                tokenCount += response.count
                 if let index = viewModel.messages.lastIndex(where: { !$0.isUser }) {
-                    let errorMessage = ChatMessage(
+                    let updatedMessage = ChatMessage(
                         id: viewModel.messages[index].id,
-                        content: "\(error.localizedDescription)",
+                        content: fullResponse,
                         isUser: false,
-                        timestamp: Date(),
+                        timestamp: viewModel.messages[index].timestamp,
                         image: nil,
                         engine: selectedModel
                     )
-                    viewModel.messages[index] = errorMessage
+                    await MainActor.run {
+                        viewModel.messages[index] = updatedMessage
+                    }
                 }
             }
             
-            isGenerating = false
-            responseStartTime = nil
-            tokenCount = 0 
+            var statsMessage = ""
+            if let startTime = responseStartTime {
+                let elapsedTime = Date().timeIntervalSince(startTime)
+                let tokensPerSecond = Double(tokenCount) / elapsedTime
+                statsMessage = "\n\n---\n [\(selectedModel)] \(String(format: "%.1f", tokensPerSecond)) tokens/sec"
+                
+                if let index = viewModel.messages.lastIndex(where: { !$0.isUser }) {
+                    let updatedMessage = ChatMessage(
+                        id: viewModel.messages[index].id,
+                        content: fullResponse + statsMessage,
+                        isUser: false,
+                        timestamp: viewModel.messages[index].timestamp,
+                        image: nil,
+                        engine: selectedModel
+                    )
+                    await MainActor.run {
+                        viewModel.messages[index] = updatedMessage
+                    }
+                }
+            }
+            
+            try DatabaseManager.shared.insert(
+                groupId: viewModel.chatId.uuidString,
+                instruction: UserDefaults.standard.string(forKey: "llmInstruction") ?? "",
+                question: currentText,
+                answer: fullResponse + statsMessage,
+                image: currentImage,
+                engine: selectedModel
+            )
+            
+            SidebarViewModel.shared.refresh()
+            
+        } catch {
+            if let index = viewModel.messages.lastIndex(where: { !$0.isUser }) {
+                let errorMessage = ChatMessage(
+                    id: viewModel.messages[index].id,
+                    content: "\(error.localizedDescription)",
+                    isUser: false,
+                    timestamp: Date(),
+                    image: nil,
+                    engine: selectedModel
+                )
+                viewModel.messages[index] = errorMessage
+            }
         }
+        
+        isGenerating = false
+        responseStartTime = nil
+        tokenCount = 0
     }
 }
+

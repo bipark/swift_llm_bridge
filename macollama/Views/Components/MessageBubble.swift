@@ -73,10 +73,19 @@ struct MessageBubble: View {
                 .frame(height: 20)
             } else {
                 if !message.isUser {
+                    HStack {
+                        Text("Model Response")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 4)
+                        Spacer()
+                    }
+                    
                     SelectableText(text: message.content)
                         .padding(20)
-                        .background(Color.orange.opacity(0.3))
-                        .foregroundColor(.white)
+                        .background(Color.gray.opacity(0.2))
+                        .foregroundColor(.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
 
                     HStack {
@@ -108,10 +117,19 @@ struct MessageBubble: View {
                     }
                     .foregroundColor(.gray)
                 } else {
+                    HStack {
+                        Spacer()
+                        Text("You")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 4)
+                    }
+                    
                     SelectableText(text: message.content)
                         .padding(20)
-                        .background(Color(NSColor.textBackgroundColor))
-                        .foregroundColor(.primary)
+                        .background(Color.blue)
+                        .foregroundColor(.white)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
 
                 }
@@ -216,8 +234,8 @@ struct MessageBubble: View {
         Task {
             do {
                 try DatabaseManager.shared.delete(id: message.id)
-                await viewModel.loadChat(groupId: viewModel.chatId.uuidString)
-                await SidebarViewModel.shared.refresh()
+                viewModel.loadChat(groupId: viewModel.chatId.uuidString)
+                SidebarViewModel.shared.refresh()
                 showTemporaryAlert("l_delete_finish".localized)
             } catch {
                 showTemporaryAlert("l_delete_fail".localized)
