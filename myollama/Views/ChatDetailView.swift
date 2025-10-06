@@ -98,6 +98,7 @@ struct ChatDetailView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
+                    .frame(minWidth: 200)
                 }
             }
         }

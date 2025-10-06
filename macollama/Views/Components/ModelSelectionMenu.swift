@@ -25,7 +25,6 @@ struct ModelSelectionMenu: View {
             }
         }
         
-        // 현재 선택된 provider가 available하지 않으면 첫 번째 available provider로 변경
         if !availableProviders.contains(selectedProvider),
            let firstProvider = availableProviders.first {
             selectedProvider = firstProvider
@@ -38,62 +37,49 @@ struct ModelSelectionMenu: View {
     
     var body: some View {
         HStack {
-            Menu {
+            // Provider Picker
+            Picker("Provider", selection: $selectedProvider) {
                 ForEach(availableProviders, id: \.self) { provider in
-                    Button(action: {
-                        selectedProvider = provider
-                        LLMService.shared.refreshForProviderChange()
-                        Task { await onProviderChange() }
-                    }) {
-                        HStack {
-                            Text(provider.rawValue)
-                            if selectedProvider == provider {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            } label: {
-                HStack {
-                    Text(selectedProvider.rawValue)
-                    Image(systemName: "chevron.down")
+                    Text(provider.rawValue).tag(provider)
                 }
             }
+            .pickerStyle(.menu)
+            .labelsHidden()
             .frame(width: 160)
-            
-            Menu {
-                ForEach(models, id: \.self) { model in
-                    Button(action: {
-                        selectedModel = model
-                    }) {
-                        Text(model)
+            .onChange(of: selectedProvider) { _, _ in
+                LLMService.shared.refreshForProviderChange()
+                Task { await onProviderChange() }
+            }
+
+            // Model Picker
+            HStack(spacing: 4) {
+                Picker("Model", selection: Binding(
+                    get: { selectedModel ?? "" },
+                    set: { selectedModel = $0.isEmpty ? nil : $0 }
+                )) {
+                    Text("l_select_model".localized).tag("")
+                    ForEach(models, id: \.self) { model in
+                        Text(model).tag(model)
                     }
                 }
-                Divider()
-                Button(action: { Task { await onModelRefresh() } }) {
-                    HStack {
-                        if isLoadingModels {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                        }
-                        Label("l_refresh".localized, systemImage: "arrow.clockwise")
-                    }
-                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 260)
                 .disabled(isLoadingModels)
-            } label: {
-                HStack {
+                
+                Button(action: { Task { await onModelRefresh() } }) {
                     if isLoadingModels {
                         ProgressView()
                             .scaleEffect(0.7)
-                        Text("l_loading".localized)
+                            .frame(width: 16, height: 16)
                     } else {
-                        Text(selectedModel ?? "l_select_model".localized)
+                        Image(systemName: "arrow.clockwise")
                     }
-                    Image(systemName: "chevron.down")
                 }
+                .buttonStyle(.borderless)
+                .disabled(isLoadingModels)
             }
             .frame(width: 300)
-            .disabled(isLoadingModels)
 
             Spacer()
             HoverImageButton(
@@ -109,4 +95,4 @@ struct ModelSelectionMenu: View {
             updateAvailableProviders()
         }
     }
-} 
+}
