@@ -50,10 +50,42 @@ struct MessageBubble: View {
     @State private var showAlert = false
     @State private var alertMessage = ""
     @State private var showingDeleteAlert = false
-    @StateObject private var viewModel = ChatViewModel.shared
+    
+    // 싱글톤 참조를 직접 사용하지 말고 필요한 경우에만 접근
+    private var viewModel: ChatViewModel { ChatViewModel.shared }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(alignment: .top, spacing: 12) {
+            if !message.isUser {
+                // AI 아바타
+                Image(systemName: "brain.head.profile")
+                    .foregroundColor(.orange)
+                    .font(.system(size: 20, weight: .medium))
+                    .frame(width: 30, height: 30)
+                    .background(Color(.systemOrange).opacity(0.15))
+                    .clipShape(Circle())
+            } else {
+                Spacer()
+            }
+            
+            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 8) {
+                // 메시지 라벨
+                HStack {
+                    if !message.isUser {
+                        Text("Assistant")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.orange)
+                    } else {
+                        Spacer()
+                        Text("You")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.blue)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
             if let image = message.image {
                 Image(nsImage: image)
                     .resizable()
@@ -75,44 +107,47 @@ struct MessageBubble: View {
                 if !message.isUser {
                     SelectableText(text: message.content)
                         .padding(20)
-                        .background(Color.orange.opacity(0.3))
-                        .foregroundColor(.white)
+                        .background(Color(.systemOrange).opacity(0.15))
+                        .foregroundColor(.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color(.systemOrange).opacity(0.3), lineWidth: 1)
+                        )
 
                     HStack {
                         HoverImageButton(imageName: "arrow.counterclockwise.square") {
-                            if !message.isUser {
-                                if let currentIndex = viewModel.messages.firstIndex(where: { $0.id == message.id }),
-                                   currentIndex > 0 {
-                                    let previousMessage = viewModel.messages[currentIndex - 1]
-                                    if previousMessage.isUser {
-                                        viewModel.startNewChat()
-                                        viewModel.messageText = previousMessage.content
-                                        if let image = previousMessage.image {
-                                            viewModel.selectedImage = image
-                                        }
-                                        viewModel.shouldFocusTextField = true
-                                    }
-                                }
+                            Task {
+                                await handleRetryAction()
                             }
                         }
                         HoverImageButton(imageName: "square.on.square"){
-                            copyToClipboard()
+                            Task {
+                                await handleCopyAction()
+                            }
                         }
                         HoverImageButton(imageName: "square.and.arrow.down"){
-                            shareContent()
+                            Task {
+                                await handleShareAction()
+                            }
                         }
                         HoverImageButton(imageName: "trash"){
-                            showingDeleteAlert = true
+                            Task { @MainActor in
+                                showingDeleteAlert = true
+                            }
                         }
                     }
                     .foregroundColor(.gray)
                 } else {
                     SelectableText(text: message.content)
                         .padding(20)
-                        .background(Color(NSColor.textBackgroundColor))
+                        .background(Color(.systemBlue).opacity(0.1))
                         .foregroundColor(.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color(.systemBlue).opacity(0.3), lineWidth: 1)
+                        )
 
                 }
             }
@@ -123,8 +158,22 @@ struct MessageBubble: View {
                     .foregroundColor(.gray)
                     .padding(.leading, 8)
             }
+                }
+            }
+            
+            if message.isUser {
+                // 사용자 아바타
+                Image(systemName: "person.circle.fill")
+                    .foregroundColor(.blue)
+                    .font(.system(size: 20, weight: .medium))
+                    .frame(width: 30, height: 30)
+            } else {
+                Spacer()
+            }
         }
         .frame(maxWidth: .infinity, alignment: message.isUser ? .trailing : .leading)
+        .padding(.leading, message.isUser ? 40 : 0)
+        .padding(.trailing, message.isUser ? 0 : 40)
         .overlay {
             if showAlert {
                 GeometryReader { geometry in
@@ -141,20 +190,61 @@ struct MessageBubble: View {
         .alert("l_delete_message".localized, isPresented: $showingDeleteAlert) {
             Button("l_cancel".localized, role: .cancel) { }
             Button("l_delete".localized, role: .destructive) {
-                deleteMessage()
+                Task {
+                    await handleDeleteAction()
+                }
             }
         } message: {
             Text("l_del_question".localized)
         }
     }
     
-    private func showTemporaryAlert(_ message: String) {
-        alertMessage = message
-        withAnimation {
-            showAlert = true
-        }
+    // MARK: - Action Handlers
+    
+    private func handleRetryAction() async {
+        guard !message.isUser else { return }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        let vm = ChatViewModel.shared
+        if let currentIndex = vm.messages.firstIndex(where: { $0.id == message.id }),
+           currentIndex > 0 {
+            let previousMessage = vm.messages[currentIndex - 1]
+            if previousMessage.isUser {
+                await MainActor.run {
+                    vm.startNewChat()
+                    vm.messageText = previousMessage.content
+                    if let image = previousMessage.image {
+                        vm.selectedImage = image
+                    }
+                    vm.shouldFocusTextField = true
+                }
+            }
+        }
+    }
+    
+    private func handleCopyAction() async {
+        await MainActor.run {
+            copyToClipboard()
+        }
+    }
+    
+    private func handleShareAction() async {
+        await MainActor.run {
+            shareContent()
+        }
+    }
+    
+    private func handleDeleteAction() async {
+        await deleteMessage()
+    }
+    
+    private func showTemporaryAlert(_ message: String) {
+        Task { @MainActor in
+            alertMessage = message
+            withAnimation {
+                showAlert = true
+            }
+            
+            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5초
             withAnimation {
                 showAlert = false
             }
@@ -175,7 +265,8 @@ struct MessageBubble: View {
         let questionContent: String
         if !message.isUser {
             let questionId = message.id - 1
-            if let question = viewModel.messages.first(where: { $0.id == questionId }) {
+            let vm = ChatViewModel.shared
+            if let question = vm.messages.first(where: { $0.id == questionId }) {
                 questionContent = question.content
             } else {
                 questionContent = ""
@@ -194,19 +285,21 @@ struct MessageBubble: View {
         picker.allowedContentTypes = [.text]
         
         picker.begin { response in
-            if response == .OK, let url = picker.url {
-                do {
-                    let content = """
-                    [Q] :
-                    \(questionContent)
-                    
-                    [A] :
-                    \(message.content)
-                    """
-                    try content.write(to: url, atomically: true, encoding: .utf8)
-                    showTemporaryAlert("l_save_finish".localized)
-                } catch {
-                    showTemporaryAlert("l_save_fail".localized)
+            Task { @MainActor in
+                if response == .OK, let url = picker.url {
+                    do {
+                        let content = """
+                        [Q] :
+                        \(questionContent)
+                        
+                        [A] :
+                        \(message.content)
+                        """
+                        try content.write(to: url, atomically: true, encoding: .utf8)
+                        showTemporaryAlert("l_save_finish".localized)
+                    } catch {
+                        showTemporaryAlert("l_save_fail".localized)
+                    }
                 }
             }
         }
@@ -215,13 +308,32 @@ struct MessageBubble: View {
     private func deleteMessage() {
         Task {
             do {
+                // DB에서 먼저 삭제
                 try DatabaseManager.shared.delete(id: message.id)
-                await viewModel.loadChat(groupId: viewModel.chatId.uuidString)
+                
+                // UI 업데이트는 메인 액터에서 별도로 처리
+                let vm = ChatViewModel.shared
+                await MainActor.run {
+                    // 로컬에서 메시지 제거 (즉시 UI 반영)
+                    if let index = vm.messages.firstIndex(where: { $0.id == message.id }) {
+                        vm.messages.remove(at: index)
+                    }
+                }
+                
+                // 사이드바 새로고침
                 await SidebarViewModel.shared.refresh()
-                showTemporaryAlert("l_delete_finish".localized)
+                
+                // 성공 알림
+                await showAlertSafely("l_delete_finish".localized)
             } catch {
-                showTemporaryAlert("l_delete_fail".localized)
+                await showAlertSafely("l_delete_fail".localized)
             }
         }
     }
-} 
+    
+    private func showAlertSafely(_ message: String) async {
+        await MainActor.run {
+            showTemporaryAlert(message)
+        }
+    }
+}

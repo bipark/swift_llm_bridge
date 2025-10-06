@@ -157,11 +157,22 @@ class LLMService: ObservableObject {
                     let instruction = UserDefaults.standard.string(forKey: "llmInstruction") ?? "You are a helpful assistant."
                     var fullPrompt = instruction + "\n\n"
                     
-                    for chat in chatHistory {
-                        fullPrompt += "User: \(chat.question)\n"
-                        fullPrompt += "Assistant: \(chat.answer)\n\n"
+                    // 프롬프트 크기 제한 (최대 8000자)
+                    let maxPromptLength = 8000
+                    let basePromptLength = fullPrompt.count + prompt.count + 20 // "User: " + "Assistant:" 여유분
+                    var availableLength = maxPromptLength - basePromptLength
+                    
+                    var historyPrompt = ""
+                    for chat in chatHistory.reversed() {
+                        let chatText = "User: \(chat.question)\nAssistant: \(chat.answer)\n\n"
+                        if historyPrompt.count + chatText.count <= availableLength {
+                            historyPrompt = chatText + historyPrompt
+                        } else {
+                            break
+                        }
                     }
                     
+                    fullPrompt += historyPrompt
                     fullPrompt += "User: \(prompt)\n"
                     fullPrompt += "Assistant:"
                     
@@ -210,7 +221,11 @@ class LLMService: ObservableObject {
     private func fetchChatHistory() async throws -> [(question: String, answer: String)] {
         let groupId = ChatViewModel.shared.chatId.uuidString
         let results = try DatabaseManager.shared.fetchQuestionsByGroupId(groupId)
-        return results.map { (question: $0.question, answer: $0.answer) }
+        let mapped = results.map { (question: $0.question, answer: $0.answer) }
+        
+        // 최근 10개 대화만 컨텍스트에 포함 (메모리 및 프롬프트 크기 제한)
+        let maxHistoryCount = 10
+        return Array(mapped.suffix(maxHistoryCount))
     }
 }
 

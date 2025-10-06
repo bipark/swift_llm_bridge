@@ -35,9 +35,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                             .onChange(of: showOllama) { _ in
-                                Task {
-                                    await ContentView.shared.loadModels()
-                                }
+                                // Models will be reloaded when settings view is dismissed
                             }
                         }
                         HStack {
@@ -84,9 +82,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                             .onChange(of: showLMStudio) { _ in
-                                Task {
-                                    await ContentView.shared.loadModels()
-                                }
+                                // Models will be reloaded when settings view is dismissed
                             }
                         }
                         HStack {
@@ -133,9 +129,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                             .onChange(of: showClaude) { _ in
-                                Task {
-                                    await ContentView.shared.loadModels()
-                                }
+                                // Models will be reloaded when settings view is dismissed
                             }
                             .disabled(claudeApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
@@ -168,9 +162,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                             .onChange(of: showOpenAI) { _ in
-                                Task {
-                                    await ContentView.shared.loadModels()
-                                }
+                                // Models will be reloaded when settings view is dismissed
                             }
                             .disabled(openaiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
@@ -317,9 +309,7 @@ struct SettingsView: View {
                     Button("l_close".localized) {
                         saveSettings()
                         isPresented = false
-                        Task {
-                            await ContentView.shared.loadModels()
-                        }
+                        // Models will be reloaded via ContentView's onDismiss handler
                     }
                 }
             }

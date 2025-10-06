@@ -33,7 +33,7 @@ struct ChatTitle: Identifiable, Equatable {
 
 struct SidebarView: View {
     @ObservedObject private var viewModel = SidebarViewModel.shared
-    @StateObject private var chatViewModel = ChatViewModel.shared
+    @ObservedObject private var chatViewModel = ChatViewModel.shared
     @State private var showingDeleteAlert = false
     @State private var itemToDelete: ChatTitle?
     @State private var selectedGroupId: String?

@@ -8,7 +8,12 @@
 import SwiftUI
 
 struct ContentView: View {
-    static let shared = ContentView()
+    
+    private enum ContentKeys {
+        static let questionTag = "[Q]:"
+        static let answerTag = "[A]:"
+        static let separator = "----------------"
+    }
     
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @State private var showingSettings = false
@@ -20,22 +25,25 @@ struct ContentView: View {
     @State private var showingError = false
     @State private var showCopyAlert = false
     
-    private let chatViewModel = ChatViewModel.shared
+    @StateObject private var chatViewModel = ChatViewModel.shared
     
     private var toolbarContent: some View {
         HStack {
             HoverImageButton(imageName: "plus") {
                 chatViewModel.startNewChat()
             }
+            .accessibilityLabel(Text("New Chat"))
             HoverImageButton(imageName: "gearshape") {
                 showingSettings = true
             }
+            .accessibilityLabel(Text("Settings"))
         }
     }
     
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView()
+                .accessibilityLabel(Text("Sidebar"))
                 .toolbar {
                     ToolbarItem(placement: .automatic) {
                         toolbarContent
@@ -58,7 +66,9 @@ struct ContentView: View {
         } detail: {
             DetailView(selectedModel: $selectedModel, isLoadingModels: $isLoadingModels)
         }
-        .sheet(isPresented: $showingSettings) {
+        .sheet(isPresented: $showingSettings, onDismiss: {
+            Task { await loadModels() }
+        }) {
             SettingsView(isPresented: $showingSettings)
         }
         .task {
@@ -80,6 +90,7 @@ struct ContentView: View {
             if showCopyAlert {
                 GeometryReader { geometry in
                     CenterAlertView(message: "l_copied".localized)
+                        .accessibilityLabel(Text("Copied"))
                         .position(
                             x: geometry.size.width / 2,
                             y: geometry.size.height / 2
@@ -98,7 +109,6 @@ struct ContentView: View {
         
         models = []
         selectedModel = nil
-        UserDefaults.standard.removeObject(forKey: "selectedModel")
         
         // Check if current provider is available
         if !LLMProvider.availableProviders.contains(selectedProvider) {
@@ -111,15 +121,14 @@ struct ContentView: View {
             
             if newModels.isEmpty {
                 selectedModel = nil
-            } else if selectedModel == nil || !newModels.contains(selectedModel!) {
+            } else if let selected = selectedModel, !newModels.contains(selected) {
+                selectedModel = newModels.first
+            } else if selectedModel == nil {
                 selectedModel = newModels.first
             }
         } catch {
-            DispatchQueue.main.async {
-                self.models = []
-                self.selectedModel = nil
-                UserDefaults.standard.removeObject(forKey: "selectedModel")
-            }
+            self.models = []
+            self.selectedModel = nil
             await showError("l_error2".localized)
         }
         
@@ -133,19 +142,19 @@ struct ContentView: View {
     }
     
     private func copyAllMessages() {
-        let messages = chatViewModel.messages
+        let messages = ChatViewModel.shared.messages
         var content = ""
         
         for i in stride(from: 0, to: messages.count, by: 2) {
             if i + 1 < messages.count {
                 content += """
-                [Q]:
+                \(ContentKeys.questionTag)
                 \(messages[i].content)
                 
-                [A]:
+                \(ContentKeys.answerTag)
                 \(messages[i + 1].content)
                 
-                ----------------
+                \(ContentKeys.separator)
                 
                 """
             }
