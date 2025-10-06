@@ -184,7 +184,9 @@ class LLMService: ObservableObject {
                     
                     for try await chunk in stream {
                         if Task.isCancelled { break }
-                        currentResponse += chunk
+                        await MainActor.run {
+                            currentResponse += chunk
+                        }
                         continuation.yield(chunk)
                     }
                     

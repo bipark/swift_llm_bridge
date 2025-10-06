@@ -106,22 +106,28 @@ struct MessageInputView: View {
         .sheet(isPresented: $showDocumentPicker) {
             DocumentPicker(selectedImage: $viewModel.selectedImage, selectedPDFText: $selectedPDFText, selectedTXTText: $selectedTXTText)
         }
-        .onChange(of: viewModel.shouldFocusTextField) { shouldFocus in
+        .onReceive(viewModel.$shouldFocusTextField) { shouldFocus in
             if shouldFocus {
                 isTextFieldFocused = true
-                viewModel.shouldFocusTextField = false
+                DispatchQueue.main.async {
+                    viewModel.shouldFocusTextField = false
+                }
             }
         }
         .onChange(of: selectedPDFText) { pdfText in
             if let pdfText = pdfText {
-                viewModel.messageText += "\n\n[PDF]\n" + pdfText
-                selectedPDFText = nil
+                Task { @MainActor in
+                    viewModel.messageText += "\n\n[PDF]\n" + pdfText
+                    selectedPDFText = nil
+                }
             }
         }
         .onChange(of: selectedTXTText) { txtText in
             if let txtText = txtText {
-                viewModel.messageText += "\n\n[TEXT]\n" + txtText
-                selectedTXTText = nil
+                Task { @MainActor in
+                    viewModel.messageText += "\n\n[TEXT]\n" + txtText
+                    selectedTXTText = nil
+                }
             }
         }
     }

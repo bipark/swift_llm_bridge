@@ -27,23 +27,8 @@ struct DetailView: View {
                     }
                     .padding()
                 }
-                .onChange(of: viewModel.messages.count) { _ in
-                    Task { @MainActor in
-                        // 스크롤 애니메이션을 지연시켜 UI 부담 감소
-                        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1초
-                        if !Task.isCancelled {
-                            scrollToBottom(proxy: proxy)
-                        }
-                    }
-                }
-                .onChange(of: viewModel.messages.last?.content) { _ in
-                    Task { @MainActor in
-                        // 메시지 내용 변경시에도 부드럽게 스크롤
-                        try? await Task.sleep(nanoseconds: 50_000_000) // 0.05초
-                        if !Task.isCancelled {
-                            scrollToBottom(proxy: proxy)
-                        }
-                    }
+                .onReceive(viewModel.$messages) { _ in
+                    scrollToBottom(proxy: proxy)
                 }
             }
             

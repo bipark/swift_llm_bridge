@@ -143,10 +143,12 @@ struct MessageInputView: View {
                 Divider(), alignment: .top
             )
         }
-        .onChange(of: viewModel.shouldFocusTextField) { shouldFocus in
+        .onReceive(viewModel.$shouldFocusTextField) { shouldFocus in
             if shouldFocus {
                 isTextFieldFocused = true
-                viewModel.shouldFocusTextField = false
+                DispatchQueue.main.async {
+                    viewModel.shouldFocusTextField = false
+                }
             }
         }
     }
