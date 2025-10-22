@@ -5,7 +5,7 @@ import MarkdownUI
 struct DetailView: View {
     @Binding var selectedModel: String?
     @Binding var isLoadingModels: Bool
-    @StateObject private var viewModel = ChatViewModel.shared
+    @ObservedObject private var viewModel = ChatViewModel.shared
     @Namespace private var bottomID
     @State private var isGenerating = false  
     @State private var responseStartTime: Date? 
@@ -47,22 +47,8 @@ struct DetailView: View {
                     }
                     .padding()
                 }
-                .onChange(of: viewModel.messages.count) {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        scrollToBottom(proxy: proxy)
-                    }
-                }
-                .onChange(of: viewModel.messages.last?.content) {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        scrollToBottom(proxy: proxy)
-                    }
-                }
                 .onReceive(viewModel.$messages) { _ in
-                    if isGenerating {
-                        withAnimation(.easeOut(duration: 0.1)) {
-                            scrollToBottom(proxy: proxy)
-                        }
-                    }
+                    scrollToBottom(proxy: proxy)
                 }
             }
             
@@ -90,7 +76,9 @@ struct DetailView: View {
     }
     
     private func scrollToBottom(proxy: ScrollViewProxy) {
-        proxy.scrollTo(bottomID, anchor: UnitPoint.bottom)
+        withAnimation(.easeOut(duration: 0.3)) {
+            proxy.scrollTo(bottomID, anchor: .bottom)
+        }
     }
     
     private func sendMessage() async {
@@ -118,9 +106,8 @@ struct DetailView: View {
             image: currentImage,
             engine: selectedModel
         )
-        viewModel.messages.append(userMessage)
-
-        // Add waiting message
+        viewModel.addMessage(userMessage)
+        
         let waitingMessage = ChatMessage(
             id: viewModel.messages.count * 2 + 1,
             content: "...",
@@ -129,31 +116,46 @@ struct DetailView: View {
             image: nil,
             engine: selectedModel
         )
-        viewModel.messages.append(waitingMessage)
+        viewModel.addMessage(waitingMessage)
         
-        do {
-            var fullResponse = ""
-            let stream = try await LLMService.shared.generateResponse(
-                prompt: currentText,
-                image: currentImage,
-                model: selectedModel
-            )
-            
-            for try await response in stream {
-                fullResponse += response
-                tokenCount += response.count
-                if let index = viewModel.messages.lastIndex(where: { !$0.isUser }) {
-                    let updatedMessage = ChatMessage(
-                        id: viewModel.messages[index].id,
-                        content: fullResponse,
-                        isUser: false,
-                        timestamp: viewModel.messages[index].timestamp,
-                        image: nil,
-                        engine: selectedModel
-                    )
-                    await MainActor.run {
-                        viewModel.messages[index] = updatedMessage
+        Task {
+            do {
+                var fullResponse = ""
+                let stream = try await LLMService.shared.generateResponse(
+                    prompt: currentText,
+                    image: currentImage,
+                    model: selectedModel
+                )
+                
+                for try await response in stream {
+                    fullResponse += response
+                    tokenCount += response.count 
+                    
+                    // 안전한 메시지 업데이트 (디바운스 적용)
+                    viewModel.updateMessageContentDebounced(fullResponse, engine: selectedModel)
+                }
+                
+                var statsMessage = ""
+                if let startTime = responseStartTime {
+                    let elapsedTime = Date().timeIntervalSince(startTime)
+                    let tokensPerSecond = Double(tokenCount) / elapsedTime
+                    statsMessage = "\n\n---\n [\(selectedModel)] \(String(format: "%.1f", tokensPerSecond)) tokens/sec"
+                    
+                    // 기존 통계 정보가 있다면 제거
+                    var cleanResponse = fullResponse
+                    if let separatorRange = fullResponse.range(of: "\n\n---\n") {
+                        cleanResponse = String(fullResponse[..<separatorRange.lowerBound])
                     }
+                    
+                    if let index = viewModel.messages.lastIndex(where: { !$0.isUser }) {
+                        viewModel.updateLastAssistantMessage(
+                            content: cleanResponse + statsMessage,
+                            engine: selectedModel
+                        )
+                    }
+                    
+                    // 데이터베이스에도 깨끗한 응답 + 통계 저장
+                    fullResponse = cleanResponse
                 }
             }
             
@@ -164,17 +166,10 @@ struct DetailView: View {
                 statsMessage = "\n\n---\n [\(selectedModel)] \(String(format: "%.1f", tokensPerSecond)) tokens/sec"
                 
                 if let index = viewModel.messages.lastIndex(where: { !$0.isUser }) {
-                    let updatedMessage = ChatMessage(
-                        id: viewModel.messages[index].id,
-                        content: fullResponse + statsMessage,
-                        isUser: false,
-                        timestamp: viewModel.messages[index].timestamp,
-                        image: nil,
+                    viewModel.updateLastAssistantMessage(
+                        content: "\(error.localizedDescription)",
                         engine: selectedModel
                     )
-                    await MainActor.run {
-                        viewModel.messages[index] = updatedMessage
-                    }
                 }
             }
             

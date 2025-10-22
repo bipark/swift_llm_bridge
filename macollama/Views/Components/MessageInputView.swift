@@ -178,11 +178,10 @@ struct MessageInputView: View {
                 Divider(), alignment: .top
             )
         }
-        .onChange(of: viewModel.shouldFocusTextField) { oldValue, newValue in
-            if newValue {
+        .onReceive(viewModel.$shouldFocusTextField) { shouldFocus in
+            if shouldFocus {
                 isTextFieldFocused = true
-                // Reset the flag in the next update cycle to prevent infinite loop
-                Task { @MainActor in
+                DispatchQueue.main.async {
                     viewModel.shouldFocusTextField = false
                 }
             }

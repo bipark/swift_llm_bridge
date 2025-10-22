@@ -32,10 +32,7 @@ struct ChatDetailView: View {
                 .onTapGesture {
                     hideKeyboard()
                 }
-                .onChange(of: chatViewModel.messages.count) {
-                    scrollToBottom(proxy: proxy)
-                }
-                .onChange(of: chatViewModel.messages.last?.content) {
+                .onReceive(chatViewModel.$messages) { _ in
                     scrollToBottom(proxy: proxy)
                 }
             }
@@ -139,6 +136,7 @@ struct ChatDetailView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
+                    .frame(minWidth: 200)
                 }
             }
         }
@@ -277,16 +275,18 @@ struct ChatDetailView: View {
                     fullResponse += response
                     tokenCount += response.count
                     
-                    if let index = chatViewModel.messages.lastIndex(where: { !$0.isUser }) {
-                        let updatedMessage = ChatMessage(
-                            id: chatViewModel.messages[index].id,
-                            content: fullResponse,
-                            isUser: false,
-                            timestamp: chatViewModel.messages[index].timestamp,
-                            image: nil,
-                            engine: selectedModel
-                        )
-                        chatViewModel.messages[index] = updatedMessage
+                    await MainActor.run {
+                        if let index = chatViewModel.messages.lastIndex(where: { !$0.isUser }) {
+                            let updatedMessage = ChatMessage(
+                                id: chatViewModel.messages[index].id,
+                                content: fullResponse,
+                                isUser: false,
+                                timestamp: chatViewModel.messages[index].timestamp,
+                                image: nil,
+                                engine: selectedModel
+                            )
+                            chatViewModel.messages[index] = updatedMessage
+                        }
                     }
                 }
                 

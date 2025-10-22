@@ -888,7 +888,9 @@ public class LLMBridge: ObservableObject {
         if let message = json["message"] as? [String: Any],
            let content = message["content"] as? String {
             tempResponse += content
-            currentResponse = tempResponse
+            await MainActor.run {
+                currentResponse = tempResponse
+            }
         }
         
         if let done = json["done"] as? Bool, done {
@@ -903,7 +905,9 @@ public class LLMBridge: ObservableObject {
            let delta = firstChoice["delta"] as? [String: Any],
            let content = delta["content"] as? String {
             tempResponse += content
-            currentResponse = tempResponse
+            await MainActor.run {
+                currentResponse = tempResponse
+            }
         }
         
         if let choices = json["choices"] as? [[String: Any]],
@@ -922,7 +926,9 @@ public class LLMBridge: ObservableObject {
                 if let delta = json["delta"] as? [String: Any],
                    let text = delta["text"] as? String {
                     tempResponse += text
-                    currentResponse = tempResponse
+                    await MainActor.run {
+                        currentResponse = tempResponse
+                    }
                 }
             case "message_stop":
                 return
@@ -939,14 +945,18 @@ public class LLMBridge: ObservableObject {
            let delta = firstChoice["delta"] as? [String: Any],
            let content = delta["content"] as? String {
             tempResponse += content
-            currentResponse = tempResponse
+            await MainActor.run {
+                currentResponse = tempResponse
+            }
             return
         }
         // Responses API 스트림 형식
         if let type = json["type"] as? String {
             if type == "response.output_text.delta", let delta = json["delta"] as? String {
                 tempResponse += delta
-                currentResponse = tempResponse
+                await MainActor.run {
+                    currentResponse = tempResponse
+                }
                 return
             }
             if type == "response.completed" {

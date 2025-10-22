@@ -39,10 +39,8 @@ struct SettingsView: View {
                                 Text("Ollama Server")
                                     .foregroundStyle(.secondary)
                             }
-                            .onChange(of: showOllama) {
-                                Task {
-                                    await onReloadModels()
-                                }
+                            .onChange(of: showOllama) { _ in
+                                // Models will be reloaded when settings view is dismissed
                             }
                         }
                         HStack {
@@ -88,10 +86,8 @@ struct SettingsView: View {
                                 Text("LMStudio".localized)
                                     .foregroundStyle(.secondary)
                             }
-                            .onChange(of: showLMStudio) {
-                                Task {
-                                    await onReloadModels()
-                                }
+                            .onChange(of: showLMStudio) { _ in
+                                // Models will be reloaded when settings view is dismissed
                             }
                         }
                         HStack {
@@ -137,10 +133,8 @@ struct SettingsView: View {
                                 Text("Claude API Key")
                                     .foregroundStyle(.secondary)
                             }
-                            .onChange(of: showClaude) {
-                                Task {
-                                    await onReloadModels()
-                                }
+                            .onChange(of: showClaude) { _ in
+                                // Models will be reloaded when settings view is dismissed
                             }
                             .disabled(claudeApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
@@ -172,10 +166,8 @@ struct SettingsView: View {
                                 Text("OpenAI API Key")
                                     .foregroundStyle(.secondary)
                             }
-                            .onChange(of: showOpenAI) {
-                                Task {
-                                    await onReloadModels()
-                                }
+                            .onChange(of: showOpenAI) { _ in
+                                // Models will be reloaded when settings view is dismissed
                             }
                             .disabled(openaiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
@@ -322,9 +314,7 @@ struct SettingsView: View {
                     Button("l_close".localized) {
                         saveSettings()
                         isPresented = false
-                        Task {
-                            await onReloadModels()
-                        }
+                        // Models will be reloaded via ContentView's onDismiss handler
                     }
                 }
             }

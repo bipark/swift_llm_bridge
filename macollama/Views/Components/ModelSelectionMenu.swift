@@ -25,7 +25,6 @@ struct ModelSelectionMenu: View {
             }
         }
         
-        
         if !availableProviders.contains(selectedProvider),
            let firstProvider = availableProviders.first {
             selectedProvider = firstProvider
@@ -38,89 +37,50 @@ struct ModelSelectionMenu: View {
     
     var body: some View {
         HStack {
-            if availableProviders.count > 1 {
-                Menu {
-                    ForEach(availableProviders, id: \.self) { provider in
-                        Button(action: {
-                            selectedProvider = provider
-                            LLMService.shared.refreshForProviderChange()
-                            Task { await onProviderChange() }
-                        }) {
-                            HStack {
-                                Text(provider.displayName)
-                                if selectedProvider == provider {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    Text("Provider: \(selectedProvider.displayName)")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-                .frame(minWidth: 240, alignment: .leading)
-                .menuStyle(.borderedButton)
-            } else {
-                // Single provider configured; show label and name without dropdown
-                HStack(spacing: 6) {
-                    Text("Provider:")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .layoutPriority(1)
-                    Text(selectedProvider.displayName)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .layoutPriority(2)
-                        .fixedSize(horizontal: true, vertical: false)
+            // Provider Picker
+            Picker("Provider", selection: $selectedProvider) {
+                ForEach(availableProviders, id: \.self) { provider in
+                    Text(provider.rawValue).tag(provider)
                 }
                 .frame(minWidth: 220, maxWidth: 400, alignment: .leading)
             }
-            
-            Menu {
-                ForEach(models, id: \.self) { model in
-                    Button(action: {
-                        selectedModel = model
-                    }) {
-                        Text(model)
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(width: 160)
+            .onChange(of: selectedProvider) { _, _ in
+                LLMService.shared.refreshForProviderChange()
+                Task { await onProviderChange() }
+            }
+
+            // Model Picker
+            HStack(spacing: 4) {
+                Picker("Model", selection: Binding(
+                    get: { selectedModel ?? "" },
+                    set: { selectedModel = $0.isEmpty ? nil : $0 }
+                )) {
+                    Text("l_select_model".localized).tag("")
+                    ForEach(models, id: \.self) { model in
+                        Text(model).tag(model)
                     }
                 }
-                Divider()
-                Button(action: { Task { await onModelRefresh() } }) {
-                    HStack {
-                        if isLoadingModels {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                        }
-                        Label("l_refresh".localized, systemImage: "arrow.clockwise")
-                    }
-                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 260)
                 .disabled(isLoadingModels)
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "cpu")
-                        .symbolRenderingMode(.hierarchical)
+                
+                Button(action: { Task { await onModelRefresh() } }) {
                     if isLoadingModels {
                         ProgressView()
                             .scaleEffect(0.7)
-                        Text("l_loading".localized)
+                            .frame(width: 16, height: 16)
                     } else {
-                        Text(selectedModel ?? "l_select_model".localized)
+                        Image(systemName: "arrow.clockwise")
                     }
                 }
+                .buttonStyle(.borderless)
+                .disabled(isLoadingModels)
             }
             .frame(width: 300)
-            .disabled(isLoadingModels)
 
             Spacer()
             HoverImageButton(
@@ -136,4 +96,4 @@ struct ModelSelectionMenu: View {
             updateAvailableProviders()
         }
     }
-} 
+}

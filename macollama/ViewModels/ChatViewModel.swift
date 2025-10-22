@@ -5,26 +5,7 @@ import AppKit
 import UIKit
 #endif
 
-enum ChatError: LocalizedError {
-    case loadFailed(String)
-    case saveFailed(String)
-    case databaseError(Error)
-    case invalidData
-
-    var errorDescription: String? {
-        switch self {
-        case .loadFailed(let groupId):
-            return "Failed to load chat: \(groupId)"
-        case .saveFailed(let reason):
-            return "Failed to save: \(reason)"
-        case .databaseError(let error):
-            return "Database error: \(error.localizedDescription)"
-        case .invalidData:
-            return "Invalid data format"
-        }
-    }
-}
-
+@MainActor
 class ChatViewModel: ObservableObject {
     static let shared = ChatViewModel()
 
@@ -33,11 +14,10 @@ class ChatViewModel: ObservableObject {
     @Published var messageText: String = ""
     @Published var chatId = UUID()
     @Published var shouldFocusTextField: Bool = false
-    @Published var chatProvider: LLMProvider = .ollama
-    @Published var chatModel: String? = nil
-    @Published var error: Error?
-    @Published var showingError = false
-
+    
+    // UI에서 표시할 최대 메시지 수 (메모리 절약)
+    private let maxDisplayMessages = 100
+    
     private init() {}
 
     private func normalizedProvider(from string: String) -> LLMProvider? {
@@ -92,6 +72,49 @@ class ChatViewModel: ObservableObject {
         }
     }
     
+    // 메시지 추가시 메모리 관리
+    func addMessage(_ message: ChatMessage) {
+        messages.append(message)
+        
+        // 메시지 수가 한계를 초과하면 오래된 메시지 제거
+        if messages.count > maxDisplayMessages {
+            let excess = messages.count - maxDisplayMessages
+            messages.removeFirst(excess)
+        }
+    }
+    
+    // 안전한 메시지 업데이트 메서드
+    func updateLastAssistantMessage(content: String, engine: String) {
+        if let index = messages.lastIndex(where: { !$0.isUser }) {
+            let existingMessage = messages[index]
+            let updatedMessage = ChatMessage(
+                id: existingMessage.id,
+                content: content,
+                isUser: false,
+                timestamp: existingMessage.timestamp,
+                image: nil,
+                engine: engine
+            )
+            messages[index] = updatedMessage
+        }
+    }
+    
+    // 배치 업데이트를 위한 디바운스된 업데이트
+    private var updateTask: Task<Void, Never>?
+    
+    func updateMessageContentDebounced(_ content: String, engine: String) {
+        updateTask?.cancel()
+        updateTask = Task { [weak self] in
+            // 100ms 지연으로 UI 업데이트 배치 처리
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard !Task.isCancelled, let self = self else { return }
+            
+            await MainActor.run {
+                self.updateLastAssistantMessage(content: content, engine: engine)
+            }
+        }
+    }
+    
     @MainActor
     func loadChat(groupId: String) {
         do {
@@ -101,8 +124,10 @@ class ChatViewModel: ObservableObject {
             
             let dateFormatter = ISO8601DateFormatter()
             
-            for (_, result) in results.enumerated() {
-                
+            // 최근 메시지만 로드하여 메모리 절약
+            let recentResults = Array(results.suffix(maxDisplayMessages / 2))
+            
+            for result in recentResults {
                 var image: PlatformImage? = nil
                 if let imageBase64 = result.image,
                    let imageData = Data(base64Encoded: imageBase64) {
@@ -124,14 +149,38 @@ class ChatViewModel: ObservableObject {
                     engine: result.engine
                 ))
                 
+                // 답변에서 중복된 통계 정보 제거 (정규식 사용)
+                var cleanAnswer = result.answer
+                
+                // 패턴: \n\n---\n [모델명] 숫자.숫자 tokens/sec 형태를 찾아서 중복 제거
+                let pattern = "\\n\\n---\\n \\[.*?\\] \\d+\\.\\d+ tokens/sec"
+                let regex = try? NSRegularExpression(pattern: pattern, options: [])
+                let range = NSRange(location: 0, length: cleanAnswer.utf16.count)
+                let matches = regex?.matches(in: cleanAnswer, options: [], range: range) ?? []
+                
+                // 여러 개의 통계 정보가 있으면 마지막 것만 남기고 제거
+                if matches.count > 1 {
+                    // 뒤에서부터 제거 (인덱스가 변하지 않도록)
+                    for i in (0..<matches.count - 1).reversed() {
+                        let match = matches[i]
+                        let matchRange = Range(match.range, in: cleanAnswer)!
+                        cleanAnswer.removeSubrange(matchRange)
+                    }
+                }
+                
                 messages.append(ChatMessage(
                     id: result.id * 2 + 1,
-                    content: result.answer,
+                    content: cleanAnswer,
                     isUser: false,
                     timestamp: timestamp,
                     image: nil,
                     engine: result.engine
                 ))
+            }
+            
+            // 메시지 수가 한계를 초과하면 오래된 메시지 제거
+            if messages.count > maxDisplayMessages {
+                messages = Array(messages.suffix(maxDisplayMessages))
             }
             
             chatId = UUID(uuidString: groupId) ?? UUID()
