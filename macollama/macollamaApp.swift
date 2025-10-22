@@ -9,6 +9,11 @@ import SwiftUI
 
 @main
 struct macollamaApp: App {
+    init() {
+        // Migrate API keys from UserDefaults to Keychain
+        SecureConfigurationManager.shared.migrateFromUserDefaults()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

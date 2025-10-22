@@ -112,13 +112,13 @@ class DatabaseManager {
             let uuid = UUID().uuidString
             let results = try fetchTitles()
             guard results.isEmpty else { return }
-            
+
             let initialData = [
                 ("l_q1", "l_a1"),
                 ("l_q2", "l_a2"),
                 ("l_q3", "l_a3")
             ]
-            
+
             for (question, answer) in initialData {
                 try insert(
                     groupId: uuid,
@@ -130,7 +130,10 @@ class DatabaseManager {
                 )
             }
         } catch {
+            // Log error but don't throw as this is optional initial data
+            #if DEBUG
             print("Failed to insert initial data: \(error)")
+            #endif
         }
     }
         

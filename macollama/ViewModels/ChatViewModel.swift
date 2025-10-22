@@ -5,9 +5,29 @@ import AppKit
 import UIKit
 #endif
 
+enum ChatError: LocalizedError {
+    case loadFailed(String)
+    case saveFailed(String)
+    case databaseError(Error)
+    case invalidData
+
+    var errorDescription: String? {
+        switch self {
+        case .loadFailed(let groupId):
+            return "Failed to load chat: \(groupId)"
+        case .saveFailed(let reason):
+            return "Failed to save: \(reason)"
+        case .databaseError(let error):
+            return "Database error: \(error.localizedDescription)"
+        case .invalidData:
+            return "Invalid data format"
+        }
+    }
+}
+
 class ChatViewModel: ObservableObject {
     static let shared = ChatViewModel()
-    
+
     @Published var messages: [ChatMessage] = []
     @Published var selectedImage: PlatformImage?
     @Published var messageText: String = ""
@@ -15,7 +35,9 @@ class ChatViewModel: ObservableObject {
     @Published var shouldFocusTextField: Bool = false
     @Published var chatProvider: LLMProvider = .ollama
     @Published var chatModel: String? = nil
-    
+    @Published var error: Error?
+    @Published var showingError = false
+
     private init() {}
 
     private func normalizedProvider(from string: String) -> LLMProvider? {
@@ -53,7 +75,7 @@ class ChatViewModel: ObservableObject {
     
     func saveProviderAndModel() {
         guard chatId != UUID() else { return }
-        
+
         Task {
             do {
                 try DatabaseManager.shared.updateChatProviderAndModel(
@@ -62,6 +84,10 @@ class ChatViewModel: ObservableObject {
                     model: chatModel
                 )
             } catch {
+                await MainActor.run {
+                    self.error = ChatError.saveFailed("Failed to save provider and model settings")
+                    self.showingError = true
+                }
             }
         }
     }
@@ -122,8 +148,12 @@ class ChatViewModel: ObservableObject {
                     self.chatModel = model
                 }
             } catch {
+                self.error = ChatError.databaseError(error)
+                self.showingError = true
             }
         } catch {
+            self.error = ChatError.loadFailed(groupId)
+            self.showingError = true
         }
     }
 } 

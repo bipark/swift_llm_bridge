@@ -52,10 +52,10 @@ class LLMService: ObservableObject {
     private init() {
         let currentTarget = Self.getCurrentTarget()
         let apiKey: String?
-        
+
         switch currentTarget {
         case .claude:
-            apiKey = UserDefaults.standard.string(forKey: "claudeApiKey")
+            apiKey = try? SecureConfigurationManager.shared.getAPIKey(for: .claude)
             self.bridge = LLMBridge(
                 baseURL: "https://api.anthropic.com",
                 port: 443,
@@ -63,7 +63,7 @@ class LLMService: ObservableObject {
                 apiKey: apiKey
             )
         case .openai:
-            apiKey = UserDefaults.standard.string(forKey: "openaiApiKey")
+            apiKey = try? SecureConfigurationManager.shared.getAPIKey(for: .openai)
             self.bridge = LLMBridge(
                 baseURL: "https://api.openai.com",
                 port: 443,
@@ -76,7 +76,7 @@ class LLMService: ObservableObject {
             let url = URL(string: baseURLString) ?? URL(string: "http://localhost:11434")!
             let host = url.host ?? "localhost"
             let port = url.port ?? (currentTarget == .lmstudio ? 1234 : 11434)
-            
+
             self.bridge = LLMBridge(
                 baseURL: "http://\(host)",
                 port: port,
@@ -89,10 +89,10 @@ class LLMService: ObservableObject {
     func updateConfiguration() {
         let currentTarget = target
         let apiKey: String?
-        
+
         switch currentTarget {
         case .claude:
-            apiKey = UserDefaults.standard.string(forKey: "claudeApiKey")
+            apiKey = try? SecureConfigurationManager.shared.getAPIKey(for: .claude)
             self.bridge = bridge.createNewSession(
                 baseURL: "https://api.anthropic.com",
                 port: 443,
@@ -100,7 +100,7 @@ class LLMService: ObservableObject {
                 apiKey: apiKey
             )
         case .openai:
-            apiKey = UserDefaults.standard.string(forKey: "openaiApiKey")
+            apiKey = try? SecureConfigurationManager.shared.getAPIKey(for: .openai)
             self.bridge = bridge.createNewSession(
                 baseURL: "https://api.openai.com",
                 port: 443,
@@ -112,7 +112,7 @@ class LLMService: ObservableObject {
             let url = URL(string: baseURL) ?? URL(string: "http://localhost:11434")!
             let host = url.host ?? "localhost"
             let port = url.port ?? (currentTarget == .lmstudio ? 1234 : 11434)
-            
+
             self.bridge = bridge.createNewSession(
                 baseURL: "http://\(host)",
                 port: port,
@@ -120,7 +120,7 @@ class LLMService: ObservableObject {
                 apiKey: apiKey
             )
         }
-        
+
         // Update model parameters
         bridge.temperature = UserDefaults.standard.double(forKey: "temperature")
         bridge.topP = UserDefaults.standard.double(forKey: "topP") != 0 ? UserDefaults.standard.double(forKey: "topP") : 0.9

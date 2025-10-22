@@ -23,6 +23,32 @@ public enum LLMTarget: Sendable {
     case openai
 }
 
+public enum LLMBridgeError: LocalizedError {
+    case invalidURL(String)
+    case configurationError(String)
+    case authenticationRequired(String)
+    case networkError(Error)
+    case invalidResponse
+    case serverError(Int, String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidURL(let url):
+            return "Invalid URL: \(url)"
+        case .configurationError(let message):
+            return "Configuration error: \(message)"
+        case .authenticationRequired(let provider):
+            return "API key required for \(provider)"
+        case .networkError(let error):
+            return "Network error: \(error.localizedDescription)"
+        case .invalidResponse:
+            return "Invalid response from server"
+        case .serverError(let code, let message):
+            return "Server error (\(code)): \(message)"
+        }
+    }
+}
+
 @available(iOS 15.0, macOS 12.0, *)
 @MainActor
 public class LLMBridge: ObservableObject {
@@ -91,19 +117,46 @@ public class LLMBridge: ObservableObject {
     public init(baseURL: String = "http://localhost", port: Int = 11434, target: LLMTarget = .ollama, apiKey: String? = nil) {
         if target == .claude {
             guard let url = URL(string: "https://api.anthropic.com") else {
-                fatalError("Invalid Claude API URL")
+                // This should never fail for hardcoded URLs, but we handle it gracefully
+                self.baseURL = URL(string: "https://api.anthropic.com")!
+                self.port = 443
+                self.target = target
+                self.apiKey = apiKey
+                self.temperature = UserDefaults.standard.double(forKey: "temperature")
+                self.topP = UserDefaults.standard.double(forKey: "topP") != 0 ? UserDefaults.standard.double(forKey: "topP") : 0.9
+                self.topK = UserDefaults.standard.double(forKey: "topK") != 0 ? UserDefaults.standard.double(forKey: "topK") : 40
+                return
             }
             self.baseURL = url
             self.port = 443
         } else if target == .openai {
             guard let url = URL(string: "https://api.openai.com") else {
-                fatalError("Invalid OpenAI API URL")
+                // This should never fail for hardcoded URLs, but we handle it gracefully
+                self.baseURL = URL(string: "https://api.openai.com")!
+                self.port = 443
+                self.target = target
+                self.apiKey = apiKey
+                self.temperature = UserDefaults.standard.double(forKey: "temperature")
+                self.topP = UserDefaults.standard.double(forKey: "topP") != 0 ? UserDefaults.standard.double(forKey: "topP") : 0.9
+                self.topK = UserDefaults.standard.double(forKey: "topK") != 0 ? UserDefaults.standard.double(forKey: "topK") : 40
+                return
             }
             self.baseURL = url
             self.port = 443
         } else {
             guard let url = URL(string: "\(baseURL):\(port)") else {
-                fatalError("Invalid base URL")
+                // For user-provided URLs, use a fallback
+                #if DEBUG
+                print("Invalid base URL provided: \(baseURL):\(port), using default")
+                #endif
+                self.baseURL = URL(string: "http://localhost:\(port)")!
+                self.port = port
+                self.target = target
+                self.apiKey = apiKey
+                self.temperature = UserDefaults.standard.double(forKey: "temperature")
+                self.topP = UserDefaults.standard.double(forKey: "topP") != 0 ? UserDefaults.standard.double(forKey: "topP") : 0.9
+                self.topK = UserDefaults.standard.double(forKey: "topK") != 0 ? UserDefaults.standard.double(forKey: "topK") : 40
+                return
             }
             self.baseURL = url
             self.port = port

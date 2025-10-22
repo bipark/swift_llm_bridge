@@ -5,8 +5,8 @@ struct SettingsView: View {
     private let onReloadModels: @Sendable () async -> Void
     @State private var serverAddress: String = UserDefaults.standard.string(forKey: "ollama_base_url") ?? "http://localhost:11434"
     @State private var lmStudioAddress: String = UserDefaults.standard.string(forKey: "lmStudioAddress") ?? "http://localhost:1234"
-    @State private var claudeApiKey: String = UserDefaults.standard.string(forKey: "claudeApiKey") ?? ""
-    @State private var openaiApiKey: String = UserDefaults.standard.string(forKey: "openaiApiKey") ?? ""
+    @State private var claudeApiKey: String = ""
+    @State private var openaiApiKey: String = ""
     @AppStorage("showOllama") private var showOllama: Bool = true
     @AppStorage("showLMStudio") private var showLMStudio: Bool = false
     @AppStorage("showClaude") private var showClaude: Bool = false
@@ -340,19 +340,43 @@ struct SettingsView: View {
             Text("l_delete_all_question".localized)
         }
         .onAppear {
+            loadAPIKeys()
         }
     }
-    
+
+    private func loadAPIKeys() {
+        do {
+            claudeApiKey = try SecureConfigurationManager.shared.getAPIKey(for: .claude) ?? ""
+            openaiApiKey = try SecureConfigurationManager.shared.getAPIKey(for: .openai) ?? ""
+        } catch {
+            #if DEBUG
+            print("Failed to load API keys from Keychain: \(error)")
+            #endif
+        }
+    }
+
     private func saveSettings() {
         UserDefaults.standard.set(serverAddress, forKey: "ollama_base_url")
         UserDefaults.standard.set(lmStudioAddress, forKey: "lmStudioAddress")
-        UserDefaults.standard.set(claudeApiKey, forKey: "claudeApiKey")
-        UserDefaults.standard.set(openaiApiKey, forKey: "openaiApiKey")
         UserDefaults.standard.set(llmInstruction, forKey: "llmInstruction")
         UserDefaults.standard.set(temperature, forKey: "temperature")
         UserDefaults.standard.set(topP, forKey: "topP")
         UserDefaults.standard.set(topK, forKey: "topK")
         UserDefaults.standard.synchronize()
+
+        // Save API keys to Keychain
+        do {
+            if !claudeApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                try SecureConfigurationManager.shared.saveAPIKey(claudeApiKey, for: .claude)
+            }
+            if !openaiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                try SecureConfigurationManager.shared.saveAPIKey(openaiApiKey, for: .openai)
+            }
+        } catch {
+            #if DEBUG
+            print("Failed to save API keys to Keychain: \(error)")
+            #endif
+        }
     }
     
     private func deleteAllData() {
@@ -365,7 +389,10 @@ struct SettingsView: View {
                     isPresented = false
                 }
             } catch {
-                // Removed print statement as requested
+                await MainActor.run {
+                    ChatViewModel.shared.error = ChatError.databaseError(error)
+                    ChatViewModel.shared.showingError = true
+                }
             }
         }
     }
