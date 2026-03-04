@@ -23,6 +23,20 @@ public enum LLMTarget: Sendable {
     case openai
 }
 
+public enum LLMError: LocalizedError {
+    case apiKeyMissing(LLMTarget)
+    case httpError(statusCode: Int, message: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .apiKeyMissing(let target):
+            return "API key is missing for \(target)"
+        case .httpError(let statusCode, let message):
+            return "HTTP \(statusCode): \(message)"
+        }
+    }
+}
+
 @available(iOS 15.0, macOS 12.0, *)
 @MainActor
 public class LLMBridge: ObservableObject {
@@ -123,65 +137,96 @@ public class LLMBridge: ObservableObject {
         return bridge
     }
         
-    public func getAvailableModels() async -> [String] {
+    public func getAvailableModels() async throws -> [String] {
         let endpoint = getModelsEndpoint()
         let requestURL = baseURL.appendingPathComponent(endpoint)
-        
+        print("[LLMBridge] getAvailableModels() called — target: \(target), url: \(requestURL)")
+
         do {
             var request = URLRequest(url: requestURL)
-            request.timeoutInterval = 10.0  
-            
+            request.timeoutInterval = 10.0
+
             if target == .claude {
-                guard let key = apiKey else {
-                    return []
+                guard let key = apiKey, !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    print("[LLMBridge] Claude API key is missing or empty")
+                    throw LLMError.apiKeyMissing(.claude)
                 }
                 request.addValue("\(key)", forHTTPHeaderField: "x-api-key")
                 request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
                 request.addValue("application/json", forHTTPHeaderField: "Content-Type")
             }
-            
+
             if target == .openai {
-                guard let key = apiKey else {
-                    return []
+                guard let key = apiKey, !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    print("[LLMBridge] OpenAI API key is missing or empty")
+                    throw LLMError.apiKeyMissing(.openai)
                 }
                 request.addValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
                 request.addValue("application/json", forHTTPHeaderField: "Content-Type")
             }
-            
-            let (data, _) = try await URLSession.shared.data(for: request)
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("[LLMBridge] \(target) models response status: \(httpResponse.statusCode)")
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let body = String(data: data, encoding: .utf8) ?? "N/A"
+                    print("[LLMBridge] HTTP error \(httpResponse.statusCode): \(body)")
+                    let message = Self.extractErrorMessage(from: data) ?? body
+                    throw LLMError.httpError(statusCode: httpResponse.statusCode, message: message)
+                }
+            }
 
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                print("[LLMBridge] Failed to parse JSON response")
                 return []
             }
-            
+
             switch target {
             case .ollama:
                 if let models = json["models"] as? [[String: Any]] {
                     let modelNames = models.compactMap { $0["name"] as? String }
+                    print("[LLMBridge] Found \(modelNames.count) ollama models")
                     return modelNames
                 }
             case .lmstudio:
                 if let data = json["data"] as? [[String: Any]] {
                     let modelIds = data.compactMap { $0["id"] as? String }
+                    print("[LLMBridge] Found \(modelIds.count) lmstudio models")
                     return modelIds
                 }
             case .claude:
                 if let data = json["data"] as? [[String: Any]] {
                     let modelIds = data.compactMap { $0["id"] as? String }
+                    print("[LLMBridge] Found \(modelIds.count) claude models")
                     return modelIds
                 }
             case .openai:
                 if let data = json["data"] as? [[String: Any]] {
                     let modelIds = data.compactMap { $0["id"] as? String }
+                    print("[LLMBridge] Found \(modelIds.count) openai models")
                     return modelIds
                 }
             }
-            
+
+            print("[LLMBridge] No models found in response for \(target)")
             return []
-            
+
+        } catch let error as LLMError {
+            throw error
         } catch {
-            return []
+            print("[LLMBridge] getAvailableModels() error: \(error)")
+            throw error
         }
+    }
+
+    private static func extractErrorMessage(from data: Data) -> String? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let error = json["error"] as? [String: Any],
+              let message = error["message"] as? String else {
+            return nil
+        }
+        return message
     }
         
     public func sendMessage(content: String, image: PlatformImage? = nil, model: String? = nil) async throws -> Message {
@@ -288,10 +333,10 @@ public class LLMBridge: ObservableObject {
                 errorMessage = nil
                 tempResponse = ""
                 currentResponse = ""
-                
+        
                 let userMessage = Message(content: content, isUser: true, image: image)
                 messages.append(userMessage)
-                
+
                 generationTask?.cancel()
                 
                 let selectedModel = model ?? getDefaultModel
@@ -585,14 +630,21 @@ public class LLMBridge: ObservableObject {
             "role": "user",
             "content": currentContent
         ])
-        
-        return [
+
+        var request: [String: Any] = [
             "model": model,
             "messages": claudeMessages,
-            "max_tokens": 4096,
-            "stream": true,
-            "temperature": 0.7
+            "max_tokens": 16000,
+            "stream": true
         ]
+
+        // Extended thinking 활성화 (temperature는 기본값 1 사용)
+        request["thinking"] = [
+            "type": "enabled",
+            "budget_tokens": 10000
+        ]
+
+        return request
     }
     
     private func createOpenAIChatRequest(content: String, model: String, image: PlatformImage?) -> [String: Any] {
@@ -836,16 +888,15 @@ public class LLMBridge: ObservableObject {
     }
     
     private func processOllamaStream(_ json: [String: Any]) async {
-        if let message = json["message"] as? [String: Any],
-           let content = message["content"] as? String {
-            tempResponse += content
-            await MainActor.run {
-                currentResponse = tempResponse
+        if let message = json["message"] as? [String: Any] {
+            if let thinking = message["thinking"] as? String, !thinking.isEmpty {
+                tempResponse += thinking
+                await MainActor.run { currentResponse = tempResponse }
             }
-        }
-        
-        if let done = json["done"] as? Bool, done {
-            return
+            if let content = message["content"] as? String, !content.isEmpty {
+                tempResponse += content
+                await MainActor.run { currentResponse = tempResponse }
+            }
         }
     }
     
@@ -870,15 +921,17 @@ public class LLMBridge: ObservableObject {
     }
     
     private func processClaudeStream(_ json: [String: Any]) async {
-        
         if let type = json["type"] as? String {
             switch type {
             case "content_block_delta":
-                if let delta = json["delta"] as? [String: Any],
-                   let text = delta["text"] as? String {
-                    tempResponse += text
-                    await MainActor.run {
-                        currentResponse = tempResponse
+                if let delta = json["delta"] as? [String: Any] {
+                    if let thinking = delta["thinking"] as? String {
+                        tempResponse += thinking
+                        await MainActor.run { currentResponse = tempResponse }
+                    }
+                    if let text = delta["text"] as? String {
+                        tempResponse += text
+                        await MainActor.run { currentResponse = tempResponse }
                     }
                 }
             case "message_stop":
@@ -893,11 +946,14 @@ public class LLMBridge: ObservableObject {
         // Chat Completions 스트림 형식
         if let choices = json["choices"] as? [[String: Any]],
            let firstChoice = choices.first,
-           let delta = firstChoice["delta"] as? [String: Any],
-           let content = delta["content"] as? String {
-            tempResponse += content
-            await MainActor.run {
-                currentResponse = tempResponse
+           let delta = firstChoice["delta"] as? [String: Any] {
+            if let reasoning = delta["reasoning_content"] as? String {
+                tempResponse += reasoning
+                await MainActor.run { currentResponse = tempResponse }
+            }
+            if let content = delta["content"] as? String {
+                tempResponse += content
+                await MainActor.run { currentResponse = tempResponse }
             }
             return
         }
@@ -905,9 +961,7 @@ public class LLMBridge: ObservableObject {
         if let type = json["type"] as? String {
             if type == "response.output_text.delta", let delta = json["delta"] as? String {
                 tempResponse += delta
-                await MainActor.run {
-                    currentResponse = tempResponse
-                }
+                await MainActor.run { currentResponse = tempResponse }
                 return
             }
             if type == "response.completed" {
@@ -1006,17 +1060,17 @@ public class LLMBridge: ObservableObject {
     }
     
     private func processOllamaStreamWithContinuation(_ json: [String: Any], continuation: AsyncThrowingStream<String, Error>.Continuation) async {
-        if let message = json["message"] as? [String: Any],
-           let content = message["content"] as? String {
-            tempResponse += content
-            await MainActor.run {
-                currentResponse = tempResponse
+        if let message = json["message"] as? [String: Any] {
+            if let thinking = message["thinking"] as? String, !thinking.isEmpty {
+                tempResponse += thinking
+                await MainActor.run { currentResponse = tempResponse }
+                continuation.yield(thinking)
             }
-            continuation.yield(content)
-        }
-        
-        if let done = json["done"] as? Bool, done {
-            return
+            if let content = message["content"] as? String, !content.isEmpty {
+                tempResponse += content
+                await MainActor.run { currentResponse = tempResponse }
+                continuation.yield(content)
+            }
         }
     }
     
@@ -1044,13 +1098,17 @@ public class LLMBridge: ObservableObject {
         if let type = json["type"] as? String {
             switch type {
             case "content_block_delta":
-                if let delta = json["delta"] as? [String: Any],
-                   let text = delta["text"] as? String {
-                    tempResponse += text
-                    await MainActor.run {
-                        currentResponse = tempResponse
+                if let delta = json["delta"] as? [String: Any] {
+                    if let thinking = delta["thinking"] as? String {
+                        tempResponse += thinking
+                        await MainActor.run { currentResponse = tempResponse }
+                        continuation.yield(thinking)
                     }
-                    continuation.yield(text)
+                    if let text = delta["text"] as? String {
+                        tempResponse += text
+                        await MainActor.run { currentResponse = tempResponse }
+                        continuation.yield(text)
+                    }
                 }
             case "message_stop":
                 return
@@ -1064,22 +1122,24 @@ public class LLMBridge: ObservableObject {
         // Chat Completions 스트림
         if let choices = json["choices"] as? [[String: Any]],
            let firstChoice = choices.first,
-           let delta = firstChoice["delta"] as? [String: Any],
-           let content = delta["content"] as? String {
-            tempResponse += content
-            await MainActor.run {
-                currentResponse = tempResponse
+           let delta = firstChoice["delta"] as? [String: Any] {
+            if let reasoning = delta["reasoning_content"] as? String {
+                tempResponse += reasoning
+                await MainActor.run { currentResponse = tempResponse }
+                continuation.yield(reasoning)
             }
-            continuation.yield(content)
+            if let content = delta["content"] as? String {
+                tempResponse += content
+                await MainActor.run { currentResponse = tempResponse }
+                continuation.yield(content)
+            }
             return
         }
         // Responses API 스트림
         if let type = json["type"] as? String {
             if type == "response.output_text.delta", let delta = json["delta"] as? String {
                 tempResponse += delta
-                await MainActor.run {
-                    currentResponse = tempResponse
-                }
+                await MainActor.run { currentResponse = tempResponse }
                 continuation.yield(delta)
                 return
             }

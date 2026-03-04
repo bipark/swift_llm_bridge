@@ -84,7 +84,11 @@ struct ContentView: View {
                 }
             }
         } message: {
-            Text("l_set_url".localized)
+            if let errorMessage {
+                Text(errorMessage)
+            } else {
+                Text("l_set_url".localized)
+            }
         }
         .overlay {
             if showCopyAlert {
@@ -106,7 +110,9 @@ struct ContentView: View {
     @MainActor
     func loadModels() async {
         isLoadingModels = true
-        
+
+        LLMService.shared.refreshForProviderChange()
+
         models = []
         selectedModel = nil
         
@@ -129,7 +135,7 @@ struct ContentView: View {
         } catch {
             self.models = []
             self.selectedModel = nil
-            await showError("l_error2".localized)
+            await showError(error.localizedDescription)
         }
         
         isLoadingModels = false

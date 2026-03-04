@@ -88,11 +88,12 @@ class LLMService: ObservableObject {
     
     func updateConfiguration() {
         let currentTarget = target
-        let apiKey: String?
+        var apiKey: String?
         
         switch currentTarget {
         case .claude:
-            apiKey = UserDefaults.standard.string(forKey: "claudeApiKey")
+            apiKey = UserDefaults.standard.string(forKey: "claudeApiKey")?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if apiKey?.isEmpty == true { apiKey = nil }
             self.bridge = bridge.createNewSession(
                 baseURL: "https://api.anthropic.com",
                 port: 443,
@@ -100,7 +101,8 @@ class LLMService: ObservableObject {
                 apiKey: apiKey
             )
         case .openai:
-            apiKey = UserDefaults.standard.string(forKey: "openaiApiKey")
+            apiKey = UserDefaults.standard.string(forKey: "openaiApiKey")?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if apiKey?.isEmpty == true { apiKey = nil }
             self.bridge = bridge.createNewSession(
                 baseURL: "https://api.openai.com",
                 port: 443,
@@ -132,14 +134,17 @@ class LLMService: ObservableObject {
     }
     
     func generateResponse(prompt: String, image: PlatformImage? = nil, model: String) async throws -> AsyncThrowingStream<String, Error> {
-        updateConfiguration()
-        
+        // 모델 파라미터만 업데이트 (bridge 재생성 없이)
+        bridge.temperature = UserDefaults.standard.double(forKey: "temperature")
+        bridge.topP = UserDefaults.standard.double(forKey: "topP") != 0 ? UserDefaults.standard.double(forKey: "topP") : 0.9
+        bridge.topK = UserDefaults.standard.double(forKey: "topK") != 0 ? UserDefaults.standard.double(forKey: "topK") : 40
+
         isGenerating = true
         currentResponse = ""
-        
+
         var platformImage: PlatformImage? = nil
         var selectedModel = model
-        
+
         if let image = image {
             if target == .openai {
                 platformImage = image
@@ -148,34 +153,14 @@ class LLMService: ObservableObject {
                 platformImage = image
             }
         }
-        
+
         return AsyncThrowingStream { continuation in
             currentTask = Task {
                 do {
-                    let chatHistory = try await fetchChatHistory()
-                    
+                    // instruction + 현재 질문만 전달 (bridge.messages가 대화 내역 관리)
                     let instruction = UserDefaults.standard.string(forKey: "llmInstruction") ?? "You are a helpful assistant."
-                    var fullPrompt = instruction + "\n\n"
-                    
-                    // 프롬프트 크기 제한 (최대 8000자)
-                    let maxPromptLength = 8000
-                    let basePromptLength = fullPrompt.count + prompt.count + 20 // "User: " + "Assistant:" 여유분
-                    var availableLength = maxPromptLength - basePromptLength
-                    
-                    var historyPrompt = ""
-                    for chat in chatHistory.reversed() {
-                        let chatText = "User: \(chat.question)\nAssistant: \(chat.answer)\n\n"
-                        if historyPrompt.count + chatText.count <= availableLength {
-                            historyPrompt = chatText + historyPrompt
-                        } else {
-                            break
-                        }
-                    }
-                    
-                    fullPrompt += historyPrompt
-                    fullPrompt += "User: \(prompt)\n"
-                    fullPrompt += "Assistant:"
-                    
+                    let fullPrompt = instruction + "\n\n" + prompt
+
                     let stream = bridge.sendMessageStream(
                         content: fullPrompt,
                         image: platformImage,
@@ -208,9 +193,20 @@ class LLMService: ObservableObject {
         }
     }
     
+    func clearBridgeMessages() {
+        bridge.clearMessages()
+    }
+
     func listModels() async throws -> [String] {
-        updateConfiguration()
-        let models = await bridge.getAvailableModels()
+        let hasApiKey: Bool
+        switch target {
+        case .openai: hasApiKey = UserDefaults.standard.string(forKey: "openaiApiKey")?.isEmpty == false
+        case .claude: hasApiKey = UserDefaults.standard.string(forKey: "claudeApiKey")?.isEmpty == false
+        default: hasApiKey = false
+        }
+        print("[LLMService] listModels() — target: \(target), baseURL: \(baseURL), apiKey present: \(hasApiKey)")
+        let models = try await bridge.getAvailableModels()
+        print("[LLMService] listModels() returned \(models.count) models")
         return models
     }
     
@@ -220,14 +216,5 @@ class LLMService: ObservableObject {
         isGenerating = false
     }
     
-    private func fetchChatHistory() async throws -> [(question: String, answer: String)] {
-        let groupId = ChatViewModel.shared.chatId.uuidString
-        let results = try DatabaseManager.shared.fetchQuestionsByGroupId(groupId)
-        let mapped = results.map { (question: $0.question, answer: $0.answer) }
-        
-        // 최근 10개 대화만 컨텍스트에 포함 (메모리 및 프롬프트 크기 제한)
-        let maxHistoryCount = 10
-        return Array(mapped.suffix(maxHistoryCount))
-    }
 }
 

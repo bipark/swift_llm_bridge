@@ -26,6 +26,7 @@ class ChatViewModel: ObservableObject {
         messageText = ""
         chatId = UUID()
         shouldFocusTextField = true
+        LLMService.shared.clearBridgeMessages()
     }
     
     // 메시지 추가시 메모리 관리
@@ -139,6 +140,7 @@ class ChatViewModel: ObservableObject {
             }
             
             chatId = UUID(uuidString: groupId) ?? UUID()
+            LLMService.shared.clearBridgeMessages()
         } catch {
             print("Failed to load chat: \(error)")
         }

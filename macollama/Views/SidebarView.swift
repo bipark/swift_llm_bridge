@@ -96,8 +96,12 @@ struct SidebarView: View {
                             Text(chat.question)
                                 .lineLimit(2)
                                 .font(.headline)
-                            
-                            HStack {
+
+                            HStack(spacing: 6) {
+                                Text(chat.engine)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
                                 Text(chat.formattedDate)
                                     .font(.caption)
                                     .foregroundColor(.gray)
