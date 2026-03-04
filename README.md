@@ -15,7 +15,7 @@ LLM Bridge is a versatile client that supports multiple LLM platforms:
 * **Ollama**: Open source software for running LLMs locally
 * **LM Studio**: Local LLM platform with various model support
 * **Claude**: Anthropic's advanced AI model
-* **OpenAI**: Leading AI platform including GPT models
+* **OpenAI**: Leading AI platform including GPT-5 and other GPT models
 
 ## Key Features
 
@@ -28,11 +28,14 @@ LLM Bridge is a versatile client that supports multiple LLM platforms:
 * **Remote LLM Access**: Connect to Ollama/LM Studio host via IP address
 * **Custom Prompts**: Support for setting custom instructions
 * **Various Open Source LLMs Support** (Deepseek, Llama, Gemma, Qwen, Mistral, etc.)
+* **GPT-5 Support**: OpenAI GPT-5 model support with automatic non-streaming fallback
 * **Customizable Instruction Settings**
 * **Advanced Model Parameters**: Temperature, Top P, Top K controls with intuitive sliders
 * **Connection Testing**: Built-in server connection status checker
 * **Multi-format File Support**: Images, PDF documents, and text files
 * **Image Recognition Support** (only on models that support it)
+* **Improved Chat UI**: Avatar icons for user and assistant, redesigned message bubbles
+* **Native Picker for Model Selection**: Improved provider and model selection using native macOS/iOS Picker
 * **Intuitive Chat-like UI**
 * **Conversation History**: Save and manage chat sessions
 * **Korean, English, Japanese, Chinese Support**

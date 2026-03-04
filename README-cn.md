@@ -15,7 +15,7 @@ LLM Bridge 是一个支持多个 LLM 平台的多功能客户端：
 * **Ollama**: 用于本地运行 LLM 的开源软件
 * **LM Studio**: 支持各种模型的本地 LLM 平台
 * **Claude**: Anthropic 的高级 AI 模型
-* **OpenAI**: 包含 GPT 模型的领先 AI 平台
+* **OpenAI**: 包含 GPT-5 在内的 GPT 模型的领先 AI 平台
 
 ## 主要功能
 
@@ -28,11 +28,14 @@ LLM Bridge 是一个支持多个 LLM 平台的多功能客户端：
 * **远程 LLM 访问**: 通过 IP 地址连接到 Ollama/LM Studio 主机
 * **自定义提示**: 支持设置自定义指令
 * **各种开源 LLM 支持**（Deepseek、Llama、Gemma、Qwen、Mistral 等）
+* **GPT-5 支持**: OpenAI GPT-5 模型支持，自动非流式回退
 * **可自定义的指令设置**
 * **高级模型参数**: 通过直观滑块控制 Temperature、Top P、Top K
 * **连接测试**: 内置服务器连接状态检查器
 * **多格式文件支持**: 图像、PDF 文档和文本文件
 * **图像识别支持**（仅在支持的模型上）
+* **改进的聊天 UI**: 用户/助手头像图标，重新设计的消息气泡
+* **原生 Picker 模型选择**: 使用 macOS/iOS 原生 Picker 改进的提供者和模型选择
 * **直观的聊天式 UI**
 * **对话历史**: 保存和管理聊天会话
 * **韩语、英语、日语、中文支持**
