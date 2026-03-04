@@ -99,10 +99,12 @@ struct DetailView: View {
                 
                 for try await response in stream {
                     fullResponse += response
-                    tokenCount += response.count 
-                    
-                    // 안전한 메시지 업데이트 (디바운스 적용)
-                    viewModel.updateMessageContentDebounced(fullResponse, engine: selectedModel)
+                    tokenCount += response.count
+
+                    viewModel.updateLastAssistantMessage(
+                        content: fullResponse,
+                        engine: selectedModel
+                    )
                 }
                 
                 var statsMessage = ""
